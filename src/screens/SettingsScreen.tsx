@@ -107,7 +107,7 @@ export function SettingsScreen() {
             style={styles.input}
             value={settings.model}
             onChangeText={(t) => update({ model: t })}
-            placeholder="gemini-2.5-flash-preview / deepseek-chat"
+            placeholder="留空自动尝试 / gemini-2.5-flash-preview / deepseek-chat"
             placeholderTextColor={Theme.textSub}
           />
         </Row>

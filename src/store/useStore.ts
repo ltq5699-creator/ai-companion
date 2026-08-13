@@ -80,19 +80,19 @@ export const useStore = create<StoreState>()(
           set({ agents: merged });
         }
 
-        // 自动纠正已被 Google 下线的旧模型名，避免新手卡在「模型不存在」
-        // （本地存储会沿用旧值覆盖默认值，所以必须在启动时兜底）
+        // 自动纠正已被 Google 下线的旧模型名：清空让 App 自动尝试所有候选模型
         const m = (settings.model || '').toLowerCase();
         const geminiOk =
           m.startsWith('gemini-2.5') ||
           m.startsWith('gemini-3') ||
           m.startsWith('gemini-flash') ||
-          m.startsWith('gemma');
+          m.startsWith('gemma') ||
+          m === '';  // 空也 OK
         const deepseekOk = m.startsWith('deepseek');
         let fixed: string | null = null;
-        if (settings.provider === 'gemini' && !geminiOk) fixed = 'gemini-2.5-flash-preview';
+        if (settings.provider === 'gemini' && !geminiOk) fixed = '';
         else if (settings.provider === 'deepseek' && !deepseekOk) fixed = 'deepseek-chat';
-        if (fixed) set({ settings: { ...settings, model: fixed } });
+        if (fixed !== null) set({ settings: { ...settings, model: fixed } });
       },
 
       addAgent: (a) =>

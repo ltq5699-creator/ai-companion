@@ -43,71 +43,96 @@ export async function generateReply(opts: {
   } catch (e: any) {
     console.error('[LLM] 调用失败', e);
     const raw = e?.message ?? 'unknown';
-    // 已经是我们给的中文指引就直接返回；其余情况去掉原始链接并包一层友好提示
-    if (raw.includes('模型')) return raw;
-    const clean = raw.replace(/https?:\/\/\S+/g, '(官方链接已省略)');
-    return `（接口出了点小问题，当前用的模型名是「${settings.model}」：${clean}）\n稍后我再试一次好不好 T_T`;
+    // 去掉超长链接，保留核心错误信息
+    const clean = raw.replace(/https?:\/\/\S+/g, '(链接已省略)');
+    return clean;
   }
 }
 
+// Gemini 模型名候选列表（按优先级排序，自动逐一尝试）
+const GEMINI_MODEL_FALLBACKS = [
+  'gemini-2.5-flash-preview',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-flash-latest',
+];
+
 // ---------------------------------------------------------------------------
-// Gemini（function calling）
+// Gemini（function calling）—— 自动尝试多个模型名
 // ---------------------------------------------------------------------------
 async function geminiLoop(
   systemPrompt: string,
   history: ChatTurn[],
   settings: AppSettings
 ): Promise<string> {
-  const model = settings.model || 'gemini-2.5-flash-preview';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
+  // 用户指定的模型优先，否则用候选列表逐个试
+  const userModel = settings.model || '';
+  const modelsToTry = userModel ? [userModel, ...GEMINI_MODEL_FALLBACKS.filter(m => m !== userModel)] : GEMINI_MODEL_FALLBACKS;
 
   const contents: any[] = history.map((h) => ({
     role: h.role === 'user' ? 'user' : 'model',
     parts: [{ text: h.text }],
   }));
 
-  const body = {
+  const baseBody = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents,
     tools: [{ functionDeclarations: [WEB_SEARCH_TOOL] }],
     toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
   };
 
-  for (let i = 0; i < 3; i++) {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await resp.json();
-    if (data.error) {
-      const msg = data.error.message || 'unknown error';
-      // 模型不存在 / 已下线：把 Google 原始错误原因也带上，方便排查
-      if (/not found|notfound|404|deprecat|migrat|unavailable|does not exist|not support/i.test(msg)) {
-        throw new Error(`模型「${model}」调用失败（Google 原因：${msg}）\n💡 请检查：\n   ① API Key 是否以 AIza 开头？\n   ② 去 aistudio.google.com 重新创建 Key 试试`);
+  let lastError = '';
+
+  for (const model of modelsToTry) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
+
+    for (let attempt = 0; attempt < 2; attempt++) { // 每个模型最多试 2 次
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(baseBody),
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+          const msg = data.error.message || JSON.stringify(data.error);
+          lastError = `模型「${model}」失败：${msg}`;
+          // 如果是 Key 无效（不是模型问题），直接报错不再试其他模型
+          if (/api key|invalid|auth/i.test(msg)) {
+            throw new Error(`⚠️ API Key 可能无效（Google 说：${msg}）\n💡 请确认你在 aistudio.google.com 创建的 Key 已完整复制`);
+          }
+          break; // 这个模型不行，试下一个
+        }
+
+        // 成功了！正常处理回复
+        const parts: any[] = data.candidates?.[0]?.content?.parts ?? [];
+        const text = parts.filter((p) => p.text).map((p) => p.text).join('');
+        const fc = parts.find((p) => p.functionCall);
+
+        if (fc) {
+          const args = fc.functionCall.args ?? {};
+          const results = await webSearch(String(args.query ?? ''), settings);
+          const resultText =
+            results.map((r) => `- ${r.title}: ${r.url}`).join('\n') || '（未找到相关结果）';
+          contents.push({ role: 'model', parts: [{ functionCall: fc.functionCall }] });
+          contents.push({
+            role: 'user',
+            parts: [{ functionResponse: { name: fc.functionCall.name, response: { result: resultText } } }],
+          });
+          continue; // 继续当前模型的循环，等待最终文本回复
+        }
+        return text || '（对方好像卡住了，再发一句试试？）';
+      } catch (e: any) {
+        if (e?.message?.includes('API Key')) throw e; // Key 问题直接抛出
+        lastError = e?.message || String(e);
       }
-      throw new Error(msg);
     }
-
-    const parts: any[] = data.candidates?.[0]?.content?.parts ?? [];
-    const text = parts.filter((p) => p.text).map((p) => p.text).join('');
-    const fc = parts.find((p) => p.functionCall);
-
-    if (fc) {
-      const args = fc.functionCall.args ?? {};
-      const results = await webSearch(String(args.query ?? ''), settings);
-      const resultText =
-        results.map((r) => `- ${r.title}: ${r.url}`).join('\n') || '（未找到相关结果）';
-      contents.push({ role: 'model', parts: [{ functionCall: fc.functionCall }] });
-      contents.push({
-        role: 'user',
-        parts: [{ functionResponse: { name: fc.functionCall.name, response: { result: resultText } } }],
-      });
-      continue;
-    }
-    return text || '（对方好像卡住了，再发一句试试？）';
   }
-  return '（对方好像卡住了，再发一句试试？）';
+
+  // 所有模型都失败了
+  throw new Error(`所有模型都试过了还是不行 😢\n${lastError}\n\n请把这段话截图发给我，我帮你查原因`);
 }
 
 // ---------------------------------------------------------------------------
