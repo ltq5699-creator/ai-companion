@@ -54,7 +54,7 @@ async function geminiLoop(
   history: ChatTurn[],
   settings: AppSettings
 ): Promise<string> {
-  const model = settings.model || 'gemini-1.5-flash';
+  const model = settings.model || 'gemini-2.0-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
 
   const contents: any[] = history.map((h) => ({

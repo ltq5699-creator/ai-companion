@@ -35,7 +35,7 @@ const PRESET_AGENTS: Agent[] = [
 const DEFAULT_SETTINGS: AppSettings = {
   provider: 'gemini',
   apiKey: '',
-  model: 'gemini-1.5-flash',
+  model: 'gemini-2.0-flash',
   searchProvider: 'demo',
   searchApiKey: '',
   imageProvider: 'demo',

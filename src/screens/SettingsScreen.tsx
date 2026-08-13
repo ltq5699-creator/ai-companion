@@ -86,7 +86,7 @@ export function SettingsScreen() {
             onChange={(v) => {
               update({ provider: v });
               if (v === 'gemini' && !settings.model.startsWith('gemini'))
-                update({ model: 'gemini-1.5-flash' });
+                update({ model: 'gemini-2.0-flash' });
               if (v === 'deepseek' && !settings.model.startsWith('deepseek'))
                 update({ model: 'deepseek-chat' });
             }}
@@ -107,7 +107,7 @@ export function SettingsScreen() {
             style={styles.input}
             value={settings.model}
             onChangeText={(t) => update({ model: t })}
-            placeholder="gemini-1.5-flash / deepseek-chat"
+            placeholder="gemini-2.0-flash / deepseek-chat"
             placeholderTextColor={Theme.textSub}
           />
         </Row>
