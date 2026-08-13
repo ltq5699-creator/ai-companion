@@ -90,7 +90,7 @@ export function ChatScreen({ route, navigation }: any) {
           style={styles.moreBtn}
           onPress={() => navigation.navigate('AgentEdit', { agentId: agent.id })}
         >
-          <Text style={styles.moreText}>⋯</Text>
+          <Text style={styles.moreText}>编辑</Text>
         </TouchableOpacity>
       </View>
 
@@ -139,14 +139,14 @@ const styles = StyleSheet.create({
   name: { fontSize: 16, fontWeight: '800', color: Theme.text },
   status: { fontSize: 11, color: Theme.textSub },
   moreBtn: {
-    width: 36,
-    height: 36,
+    height: 32,
+    paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 18,
+    borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.7)',
   },
-  moreText: { fontSize: 22, color: Theme.text, lineHeight: 24 },
+  moreText: { fontSize: 14, fontWeight: '700', color: Theme.text, lineHeight: 18 },
   empty: { alignItems: 'center', marginTop: 60, paddingHorizontal: 40 },
   emptyText: { textAlign: 'center', color: Theme.textSub, lineHeight: 22 },
   typing: {
