@@ -21,7 +21,7 @@ class MainApplication : Application(), ReactApplication {
         override fun getJSMainModuleName(): String = "index"
       }
 
-  override fun getReactNativeHost(): ReactNativeHost = mReactNativeHost
+  override val reactNativeHost: ReactNativeHost = mReactNativeHost
 
   override fun onCreate() {
     super.onCreate()
