@@ -92,13 +92,23 @@ export function SettingsScreen() {
             }}
           />
         </Row>
+        <Row label="GLM Key">
+          <TextInput
+            style={styles.input}
+            secureTextEntry
+            value={settings.glmApiKey ?? ''}
+            onChangeText={(t) => update({ glmApiKey: t })}
+            placeholder="推荐！国内直连免梯子"
+            placeholderTextColor={Theme.textSub}
+          />
+        </Row>
         <Row label="API Key">
           <TextInput
             style={styles.input}
             secureTextEntry
             value={settings.apiKey}
             onChangeText={(t) => update({ apiKey: t })}
-            placeholder="粘贴你的 Key"
+            placeholder="粘贴你的 Gemini Key（备用）"
             placeholderTextColor={Theme.textSub}
           />
         </Row>
@@ -112,7 +122,7 @@ export function SettingsScreen() {
           />
         </Row>
         <Text style={styles.hint}>
-          Gemini Key：aistudio.google.com · Deepseek Key：platform.deepseek.com（均可免费额度）
+          🌟 推荐填 GLM Key：open.bigmodel.cn 手机号注册 → 控制台 → API 密钥 → 新建，永久免费、国内直连不受 Google 限流影响。填了它就走 GLM，Gemini Key 留作备用。
         </Text>
       </Card>
 

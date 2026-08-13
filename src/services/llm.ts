@@ -31,22 +31,93 @@ export async function generateReply(opts: {
 }): Promise<string> {
   const { systemPrompt, history, settings } = opts;
 
+  const clean = (s: string) => (s ?? 'unknown').replace(/https?:\/\/\S+/g, '(链接已省略)');
+
+  if (settings.provider === 'deepseek') {
+    if (!settings.apiKey) {
+      return '⚠️ 还没有配置大模型 API Key，先去「设置」里填一下 Key 我再陪你聊呀~';
+    }
+    try {
+      return await deepseekLoop(systemPrompt, history, settings);
+    } catch (e: any) {
+      console.error('[LLM] Deepseek 调用失败', e);
+      throw new Error(clean(e?.message));
+    }
+  }
+
+  // Gemini / GLM 通道：填了 GLM Key 优先走智谱（国内直连、免费、不受 Google 限流影响），
+  // GLM 失败或未配置时走 Gemini 兜底
+  let glmErr: string | null = null;
+  if (settings.glmApiKey) {
+    try {
+      return await glmLoop(systemPrompt, history, settings);
+    } catch (e: any) {
+      glmErr = e?.message ?? 'unknown';
+      console.warn('[LLM] GLM 通道失败，尝试 Gemini 兜底', e);
+    }
+  }
+
   if (!settings.apiKey) {
-    return '⚠️ 还没有配置大模型 API Key，先去「设置」里填一下 Gemini 或 Deepseek 的 Key 我再陪你聊呀~';
+    if (glmErr) throw new Error(clean(glmErr));
+    return '⚠️ 还没有配置大模型 API Key，先去「设置」里填一下 Key 我再陪你聊呀~';
   }
 
   try {
-    if (settings.provider === 'gemini') {
-      return await geminiLoop(systemPrompt, history, settings);
-    }
-    return await deepseekLoop(systemPrompt, history, settings);
+    return await geminiLoop(systemPrompt, history, settings);
   } catch (e: any) {
-    console.error('[LLM] 调用失败', e);
-    const raw = e?.message ?? 'unknown';
-    const clean = raw.replace(/https?:\/\/\S+/g, '(链接已省略)');
-    // 错误向上抛出，由调用方（聊天界面/调度器）决定如何展示，避免被当成对方回复
-    throw new Error(clean);
+    console.error('[LLM] Gemini 调用失败', e);
+    throw new Error(clean(e?.message));
   }
+}
+
+// ---------------------------------------------------------------------------
+// 智谱 GLM（国内直连，glm-4-flash 系列免费）—— OpenAI 兼容接口
+// ---------------------------------------------------------------------------
+const GLM_MODELS = ['glm-4.5-flash', 'glm-4-flash'];
+
+async function glmLoop(
+  systemPrompt: string,
+  history: ChatTurn[],
+  settings: AppSettings
+): Promise<string> {
+  const url = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
+  const messages: any[] = [{ role: 'system', content: systemPrompt }];
+  for (const h of history) messages.push({ role: h.role, content: h.text });
+
+  let lastErr = '';
+  for (const model of GLM_MODELS) {
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${settings.glmApiKey}`,
+        },
+        body: JSON.stringify({ model, messages, temperature: 0.9 }),
+      });
+      const data = await resp.json().catch(() => null);
+      if (!data) {
+        lastErr = `HTTP ${resp.status}`;
+        continue;
+      }
+      if (data.error) {
+        const msg = String(data.error.message || data.error.code || '');
+        if (/鉴权|认证|token|api.?key|unauthorized|invalid|401/i.test(msg)) {
+          throw new Error(`⚠️ GLM Key 可能无效\n💡 请确认在 open.bigmodel.cn 控制台复制的 Key 完整无误`);
+        }
+        lastErr = msg.slice(0, 40);
+        continue; // 换下一个免费模型
+      }
+      const text = data.choices?.[0]?.message?.content;
+      if (text) return text;
+      lastErr = '空回复';
+    } catch (e: any) {
+      if (e?.message?.includes('GLM Key')) throw e;
+      lastErr = '网络异常';
+      continue;
+    }
+  }
+  throw new Error(`GLM 通道暂时不通（${lastErr}）`);
 }
 
 // ---------------------------------------------------------------------------

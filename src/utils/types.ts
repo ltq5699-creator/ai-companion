@@ -65,6 +65,8 @@ export interface ChatSession {
 export interface AppSettings {
   provider: 'gemini' | 'deepseek';
   apiKey: string;
+  /** 智谱 GLM Key（国内直连，glm-4-flash 系列永久免费）；填了优先走 GLM，Gemini 作备用 */
+  glmApiKey?: string;
   model: string;
   /** 联网搜索方案：'demo'(免费，返回真实搜索页链接) 或 'serper'/'brave'(需 key) */
   searchProvider: 'demo' | 'serper' | 'brave';
