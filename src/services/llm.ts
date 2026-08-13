@@ -49,90 +49,65 @@ export async function generateReply(opts: {
   }
 }
 
-// Gemini 模型名候选列表（按优先级排序，自动逐一尝试）
-const GEMINI_MODEL_FALLBACKS = [
-  'gemini-2.5-flash-preview',
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-flash-latest',
-];
-
 // ---------------------------------------------------------------------------
-// Gemini（function calling）—— 自动尝试多个模型名
+// Gemini —— 单模型调用，轻量重试（避免免费额度超限）
 // ---------------------------------------------------------------------------
 async function geminiLoop(
   systemPrompt: string,
   history: ChatTurn[],
   settings: AppSettings
 ): Promise<string> {
-  // 用户指定的模型优先，否则用候选列表逐个试
-  const userModel = settings.model || '';
-  const modelsToTry = userModel ? [userModel, ...GEMINI_MODEL_FALLBACKS.filter(m => m !== userModel)] : GEMINI_MODEL_FALLBACKS;
+  const model = settings.model || 'gemini-2.5-flash-preview';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
 
   const contents: any[] = history.map((h) => ({
     role: h.role === 'user' ? 'user' : 'model',
     parts: [{ text: h.text }],
   }));
 
-  const baseBody = {
+  const body = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents,
-    // 注意：Google 2026 年新规范要求 functionCall 带 thought_signature，
-    // 暂时去掉 tools 避免报错，先保证基础聊天能通；联网搜索后续加回
   };
 
-  let lastError = '';
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json();
 
-  for (const model of modelsToTry) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
-
-    for (let attempt = 0; attempt < 2; attempt++) { // 每个模型最多试 2 次
-      try {
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(baseBody),
-        });
-        const data = await resp.json();
-
-        if (data.error) {
-          const msg = data.error.message || JSON.stringify(data.error);
-          lastError = `模型「${model}」失败：${msg}`;
-          // 如果是 Key 无效（不是模型问题），直接报错不再试其他模型
-          if (/api key|invalid|auth/i.test(msg)) {
-            throw new Error(`⚠️ API Key 可能无效（Google 说：${msg}）\n💡 请确认你在 aistudio.google.com 创建的 Key 已完整复制`);
-          }
-          break; // 这个模型不行，试下一个
+      if (data.error) {
+        const msg = data.error.message || '';
+        // Key 无效 → 直接报错
+        if (/api key|invalid|auth/i.test(msg)) {
+          throw new Error(`⚠️ API Key 可能无效\n💡 请确认在 aistudio.google.com 创建的 Key 已完整复制`);
         }
-
-        // 成功了！正常处理回复
-        const parts: any[] = data.candidates?.[0]?.content?.parts ?? [];
-        const text = parts.filter((p) => p.text).map((p) => p.text).join('');
-        const fc = parts.find((p) => p.functionCall);
-
-        if (fc) {
-          const args = fc.functionCall.args ?? {};
-          const results = await webSearch(String(args.query ?? ''), settings);
-          const resultText =
-            results.map((r) => `- ${r.title}: ${r.url}`).join('\n') || '（未找到相关结果）';
-          contents.push({ role: 'model', parts: [{ functionCall: fc.functionCall }] });
-          contents.push({
-            role: 'user',
-            parts: [{ functionResponse: { name: fc.functionCall.name, response: { result: resultText } } }],
-          });
-          continue; // 继续当前模型的循环，等待最终文本回复
+        // 额度超限 → 友好提示等一下，不再重试浪费额度
+        if (/quota|exceeded|limit|rate/i.test(msg)) {
+          throw new Error(`⏳ 聊得太快啦，Google 让我们稍等一下再聊～（免费版每分钟限制 20 次，正常聊天不会触发）\n等 30 秒后再发一条就好啦`);
         }
-        return text || '（对方好像卡住了，再发一句试试？）';
-      } catch (e: any) {
-        if (e?.message?.includes('API Key')) throw e; // Key 问题直接抛出
-        lastError = e?.message || String(e);
+        // 其他错误 → 重试一次
+        if (attempt === 0) continue;
+        throw new Error(`调用失败：${msg.replace(/https?:\/\/\S+/g, '(链接已省略)')}`);
       }
+
+      // 成功！正常处理回复
+      const parts: any[] = data.candidates?.[0]?.content?.parts ?? [];
+      const text = parts.filter((p) => p.text).map((p) => p.text).join('');
+      return text || '（对方好像卡住了，再发一句试试？）';
+    } catch (e: any) {
+      if (e?.message?.includes('API Key') || e?.message?.includes('⏳') || e?.message?.includes('聊得太快')) {
+        throw e;
+      }
+      if (attempt === 0) continue;
+      throw e;
     }
   }
 
-  // 所有模型都失败了
-  throw new Error(`所有模型都试过了还是不行 😢\n${lastError}\n\n请把这段话截图发给我，我帮你查原因`);
+  return '（对方好像卡住了，稍后再试试？）';
 }
 
 // ---------------------------------------------------------------------------
