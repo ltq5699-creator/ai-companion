@@ -70,8 +70,8 @@ export const useStore = create<StoreState>()(
       settings: DEFAULT_SETTINGS,
 
       init: () => {
-        // 首次启动时确保预设智能体存在（兼容老用户升级）
-        const { agents } = get();
+        // 首次启动/升级时确保预设智能体存在（兼容老用户升级）
+        const { agents, settings } = get();
         const presetIds = PRESET_AGENTS.map((a) => a.id);
         const hasAll = presetIds.every((id) => agents.some((a) => a.id === id));
         if (!hasAll) {
@@ -79,6 +79,20 @@ export const useStore = create<StoreState>()(
           for (const a of agents) if (!presetIds.includes(a.id)) merged.push(a);
           set({ agents: merged });
         }
+
+        // 自动纠正已被 Google 下线的旧模型名，避免新手卡在「模型不存在」
+        // （本地存储会沿用旧值覆盖默认值，所以必须在启动时兜底）
+        const m = (settings.model || '').toLowerCase();
+        const geminiOk =
+          m.startsWith('gemini-2.5') ||
+          m.startsWith('gemini-3') ||
+          m.startsWith('gemini-flash') ||
+          m.startsWith('gemma');
+        const deepseekOk = m.startsWith('deepseek');
+        let fixed: string | null = null;
+        if (settings.provider === 'gemini' && !geminiOk) fixed = 'gemini-2.5-flash';
+        else if (settings.provider === 'deepseek' && !deepseekOk) fixed = 'deepseek-chat';
+        if (fixed) set({ settings: { ...settings, model: fixed } });
       },
 
       addAgent: (a) =>

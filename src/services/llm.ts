@@ -46,7 +46,7 @@ export async function generateReply(opts: {
     // 已经是我们给的中文指引就直接返回；其余情况去掉原始链接并包一层友好提示
     if (raw.includes('模型')) return raw;
     const clean = raw.replace(/https?:\/\/\S+/g, '(官方链接已省略)');
-    return `（网络或接口出了点小问题：${clean}）\n稍后我再试一次好不好 T_T`;
+    return `（接口出了点小问题，当前用的模型名是「${settings.model}」：${clean}）\n稍后我再试一次好不好 T_T`;
   }
 }
 
