@@ -58,7 +58,7 @@ async function geminiLoop(
   history: ChatTurn[],
   settings: AppSettings
 ): Promise<string> {
-  const model = settings.model || 'gemini-2.5-flash';
+  const model = settings.model || 'gemini-2.5-flash-preview';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
 
   const contents: any[] = history.map((h) => ({
@@ -82,9 +82,9 @@ async function geminiLoop(
     const data = await resp.json();
     if (data.error) {
       const msg = data.error.message || 'unknown error';
-      // 模型不存在 / 已下线：给中文指引，不要把 Google 的原始迁移链接丢给用户
+      // 模型不存在 / 已下线：把 Google 原始错误原因也带上，方便排查
       if (/not found|notfound|404|deprecat|migrat|unavailable|does not exist|not support/i.test(msg)) {
-        throw new Error(`模型「${model}」当前不可用或已被 Google 改名～请去「设置」把「模型名」改成 gemini-2.5-flash 再试一次就好啦`);
+        throw new Error(`模型「${model}」调用失败（Google 原因：${msg}）\n💡 请检查：\n   ① API Key 是否以 AIza 开头？\n   ② 去 aistudio.google.com 重新创建 Key 试试`);
       }
       throw new Error(msg);
     }

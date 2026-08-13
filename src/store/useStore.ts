@@ -35,7 +35,7 @@ const PRESET_AGENTS: Agent[] = [
 const DEFAULT_SETTINGS: AppSettings = {
   provider: 'gemini',
   apiKey: '',
-  model: 'gemini-2.5-flash',
+  model: 'gemini-2.5-flash-preview',
   searchProvider: 'demo',
   searchApiKey: '',
   imageProvider: 'demo',
@@ -90,7 +90,7 @@ export const useStore = create<StoreState>()(
           m.startsWith('gemma');
         const deepseekOk = m.startsWith('deepseek');
         let fixed: string | null = null;
-        if (settings.provider === 'gemini' && !geminiOk) fixed = 'gemini-2.5-flash';
+        if (settings.provider === 'gemini' && !geminiOk) fixed = 'gemini-2.5-flash-preview';
         else if (settings.provider === 'deepseek' && !deepseekOk) fixed = 'deepseek-chat';
         if (fixed) set({ settings: { ...settings, model: fixed } });
       },
