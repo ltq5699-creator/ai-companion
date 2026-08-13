@@ -80,15 +80,30 @@ export function GroupChatScreen({ route, navigation }: any) {
 
     // 逐个回复：先出来的先冒泡，像真实群里你一句我一句
     for (const m of responders) {
-      const msgs = await replyOnce({
-        systemPrompt: buildGroupMemberSystemPrompt(m.name, m.systemPrompt, ctx),
-        history,
-        settings,
-        ctx,
-        senderId: m.id,
-        senderName: m.name,
-      });
-      for (const msg of msgs) appendMessage(agentId, msg);
+      try {
+        const msgs = await replyOnce({
+          systemPrompt: buildGroupMemberSystemPrompt(m.name, m.systemPrompt, ctx),
+          history,
+          settings,
+          ctx,
+          senderId: m.id,
+          senderName: m.name,
+          recentMessages: useStore.getState().sessions[agentId]?.messages ?? [],
+        });
+        for (const msg of msgs) appendMessage(agentId, msg);
+      } catch (e: any) {
+        // 出错（额度/Key/网络）时提示一次并停止后续成员，避免连续打满 API 额度
+        appendMessage(agentId, {
+          id: uid(),
+          role: 'agent',
+          type: 'text',
+          text: e?.message ?? '（网络好像开小差了，稍后再发一条试试？）',
+          createdAt: Date.now(),
+          senderId: m.id,
+          senderName: m.name,
+        });
+        break;
+      }
     }
     setThinking(false);
   };

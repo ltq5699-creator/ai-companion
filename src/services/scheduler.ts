@@ -114,19 +114,26 @@ export async function runCatchUp(agentId: string, date = new Date()): Promise<vo
   const ctx = buildTimeContext(slotDate);
   const greeting = s.kind === 'anchor';
 
-  const newMsgs = await replyOnce({
-    systemPrompt: agent.systemPrompt,
-    history: buildHistory(sessions[agentId]),
-    settings,
-    ctx,
-    greeting,
-  });
+  try {
+    const newMsgs = await replyOnce({
+      systemPrompt: agent.systemPrompt,
+      history: buildHistory(sessions[agentId]),
+      settings,
+      ctx,
+      greeting,
+      recentMessages: sessions[agentId]?.messages ?? [],
+    });
 
-  for (const m of newMsgs) appendMessage(agentId, m);
+    for (const m of newMsgs) appendMessage(agentId, m);
 
-  const preview = newMsgs.find((m) => m.type === 'text')?.text ?? '给你发了一张图 📷';
-  await showMessageNotification(agent.name, preview.slice(0, 80));
+    const preview = newMsgs.find((m) => m.type === 'text')?.text ?? '给你发了一张图 📷';
+    await showMessageNotification(agent.name, preview.slice(0, 80));
+  } catch (e) {
+    // 任何异常（额度/Key/网络）都不要刷屏，也不要把错误当聊天消息写进记录
+    console.warn('[scheduler] 主动消息生成失败，跳过该槽位', e);
+  }
 
+  // 无论成功失败都标记为已处理，避免每 60 秒重复触发同一槽位
   slots[target].delivered = true;
   await saveSlots(agentId, date, slots);
 }

@@ -102,8 +102,9 @@ export async function imageSearch(
       console.warn('图片 API 失败，回退 loremflickr', e);
     }
   }
-  // 真实可加载的免费图片（按关键词）
-  return `https://loremflickr.com/600/400/${q}`;
+  // 真实可加载的免费图片（按关键词）；random 参数保证同一关键词每次返回不同的图，避免总发同一张
+  const rand = Math.floor(Math.random() * 1000000);
+  return `https://loremflickr.com/600/400/${q}?random=${rand}`;
 }
 
 async function pexelsImage(q: string, key: string): Promise<string> {

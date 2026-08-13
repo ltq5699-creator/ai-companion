@@ -43,9 +43,9 @@ export async function generateReply(opts: {
   } catch (e: any) {
     console.error('[LLM] 调用失败', e);
     const raw = e?.message ?? 'unknown';
-    // 去掉超长链接，保留核心错误信息
     const clean = raw.replace(/https?:\/\/\S+/g, '(链接已省略)');
-    return clean;
+    // 错误向上抛出，由调用方（聊天界面/调度器）决定如何展示，避免被当成对方回复
+    throw new Error(clean);
   }
 }
 

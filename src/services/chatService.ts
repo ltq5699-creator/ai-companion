@@ -24,6 +24,17 @@ export interface ReplyParams {
   greeting?: boolean;
   senderId?: string;
   senderName?: string;
+  /** 最近的消息列表（用于图片节流判断） */
+  recentMessages?: Message[];
+}
+
+// 图片节流：两张图之间至少隔 6 条消息，防止 AI 每句话都配图
+const IMAGE_MIN_GAP = 6;
+
+export function canSendImage(messages?: Message[]): boolean {
+  if (!messages || messages.length === 0) return true;
+  const recent = messages.slice(-IMAGE_MIN_GAP);
+  return !recent.some((m) => m.type === 'image');
 }
 
 // 核心：调用大模型 + 解析图片标记，返回若干条待插入的消息（文本 + 图片）
@@ -51,7 +62,11 @@ export async function replyOnce(p: ReplyParams): Promise<Message[]> {
     });
   }
 
-  for (const q of imageQueries) {
+  // 双保险：prompt 里要求 AI 少发图 + 前端硬节流（间隔不足时直接忽略图片标记）
+  const allowImage = canSendImage(p.recentMessages);
+  const queries = allowImage ? imageQueries.slice(0, 1) : [];
+
+  for (const q of queries) {
     try {
       const url = await imageSearch(q, p.settings);
       msgs.push({

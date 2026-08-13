@@ -64,14 +64,27 @@ export function ChatScreen({ route, navigation }: any) {
 
     const fresh = useStore.getState().sessions[agentId];
     const history = buildHistory(fresh);
-    const newMsgs = await replyOnce({
-      systemPrompt: agent.systemPrompt,
-      history,
-      settings,
-      ctx: nowContext(),
-    });
-    for (const m of newMsgs) appendMessage(agentId, m);
-    setThinking(false);
+    try {
+      const newMsgs = await replyOnce({
+        systemPrompt: agent.systemPrompt,
+        history,
+        settings,
+        ctx: nowContext(),
+        recentMessages: fresh?.messages ?? [],
+      });
+      for (const m of newMsgs) appendMessage(agentId, m);
+    } catch (e: any) {
+      // 接口异常（额度超限/Key 无效/网络）时，把友好提示作为一条消息展示，不卡在"正在输入"
+      appendMessage(agentId, {
+        id: uid(),
+        role: 'agent',
+        type: 'text',
+        text: e?.message ?? '（网络好像开小差了，稍后再发一条试试？）',
+        createdAt: Date.now(),
+      });
+    } finally {
+      setThinking(false);
+    }
   };
 
   return (
