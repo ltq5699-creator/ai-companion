@@ -1,0 +1,130 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+react {
+    /* Folders */
+    // root = file("../..")
+    // reactNativeDir = file("../../node_modules/react-native")
+
+    /* Variants */
+    debuggableVariants = ["debug"]
+
+    /* Bundling */
+    // nodeExecutableAndArgs = ["node"]
+    // cliConfig = "../react-native.config.js"
+
+    /* Dev server */
+    // devServer = ["10.0.2.2", 8081]
+
+    /* Dependencies */
+    // extraPackages = []
+
+    /* Autolinking */
+    autolinkLibrariesWithApp()
+}
+
+/**
+ * Set this to true to run Proguard on Release builds to shrink the Java bytecode.
+ */
+def enableProguardInReleaseBuilds = false
+
+/**
+ * Set this to true to run the Hermes Bytecode Compiler in Release builds.
+ */
+def enableHermesInReleaseBuilds = true
+
+def jscFlavor = 'org.webkit:android-jsc:+'
+
+/**
+ * 自动生成调试签名文件。
+ * 第一次构建时如果没有 debug.keystore，会用当前 JDK 自带的 keytool 现场生成一个，
+ * 这样「clone 下来直接 gradlew assembleRelease」就能出包，完全不需要手动敲 keytool。
+ */
+def debugKeystoreFile = file('debug.keystore')
+if (!debugKeystoreFile.exists()) {
+    println "> debug.keystore 不存在，正在自动生成…"
+    def isWindows = System.getProperty('os.name').toLowerCase().contains('windows')
+    def keytoolBin = new File(System.getProperty('java.home'), 'bin/keytool' + (isWindows ? '.exe' : ''))
+    def keytoolPath = keytoolBin.exists() ? keytoolBin.absolutePath : 'keytool'
+    def cmd = [
+            keytoolPath, '-genkeypair', '-v',
+            '-keystore', debugKeystoreFile.absolutePath,
+            '-storepass', 'android',
+            '-keypass', 'android',
+            '-alias', 'androiddebugkey',
+            '-keyalg', 'RSA',
+            '-keysize', '2048',
+            '-validity', '10000',
+            '-dname', 'CN=AI Companion,OU=Dev,O=AI Companion,L=Seoul,ST=Seoul,C=KR'
+    ]
+    try {
+        def pb = new ProcessBuilder(cmd)
+        pb.redirectErrorStream(true)
+        def proc = pb.start()
+        proc.inputStream.eachLine { line -> println "  keytool: ${line}" }
+        proc.waitFor()
+    } catch (Exception e) {
+        println "  生成失败: ${e.message}"
+    }
+    if (!debugKeystoreFile.exists()) {
+        throw new GradleException(
+                "无法自动生成 debug.keystore。请在 android/app 目录手动执行：\n" +
+                "keytool -genkeypair -v -keystore debug.keystore -storepass android -keypass android " +
+                "-alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname \"CN=AI Companion\"")
+    }
+}
+
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
+
+    namespace "com.aicompanion"
+    defaultConfig {
+        applicationId "com.aicompanion"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        debug {
+            storeFile debugKeystoreFile
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        release {
+            // 默认复用 debug 签名，便于无密钥直接出包；
+            // 想用自己的证书时，把下面 4 项改成你的 keystore 信息即可（或走 gradle.properties 注入）
+            storeFile debugKeystoreFile
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+dependencies {
+    // The default React Native dependency
+    implementation("com.facebook.react:react-android")
+
+    if (enableHermesInReleaseBuilds) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscFlavor
+    }
+}

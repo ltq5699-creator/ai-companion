@@ -1,0 +1,22 @@
+pluginManagement {
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+plugins {
+    id("com.facebook.react.settings")
+}
+
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    // 自动扫描 node_modules，把 notifee / async-storage / image-picker 等原生库链接进来
+    ex.autolinkLibrariesFromCommand()
+}
+
+rootProject.name = 'AICompanion'
+
+include ':app'
+includeBuild('../node_modules/@react-native/gradle-plugin')

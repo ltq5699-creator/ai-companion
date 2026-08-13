@@ -1,0 +1,28 @@
+# OSX
+.DS_Store
+
+# node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# RN
+.expo/
+dist/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+android/**/release.keystore
+android/app/debug.keystore
+# 注意：gradlew / gradlew.bat / gradle-wrapper.jar 必须提交，
+# 否则云端 CI 和别人 clone 后都跑不起来。
+
+# misc
+*.log

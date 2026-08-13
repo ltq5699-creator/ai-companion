@@ -1,0 +1,5 @@
+<resources>
+    <color name="status_bar_color">#FFEDE8</color>
+    <color name="colorPrimary">#FF8A7A</color>
+    <color name="colorAccent">#FF8A7A</color>
+</resources>

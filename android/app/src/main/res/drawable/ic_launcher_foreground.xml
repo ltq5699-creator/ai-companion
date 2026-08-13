@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 温暖极简的心形占位 Logo -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,80 C30,62 22,48 22,38 C22,30 28,25 35,25 C42,25 49,30 54,38 C59,30 66,25 73,25 C80,25 86,30 86,38 C86,48 78,62 54,80 Z" />
+</vector>
