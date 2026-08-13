@@ -50,15 +50,25 @@ export async function generateReply(opts: {
 }
 
 // ---------------------------------------------------------------------------
-// Gemini —— 单模型调用，轻量重试（避免免费额度超限）
+// Gemini —— 多模型自动接力（每个模型的每日免费额度相互独立）
+// 默认先用 flash-lite（免费额度最高），额度用尽自动换下一个模型，用户无感知
 // ---------------------------------------------------------------------------
+const GEMINI_FALLBACKS = [
+  'gemini-2.5-flash-lite', // 免费额度最高（30 RPM / 最多 1500 次每天）
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.5-flash-preview',
+];
+
 async function geminiLoop(
   systemPrompt: string,
   history: ChatTurn[],
   settings: AppSettings
 ): Promise<string> {
-  const model = settings.model || 'gemini-2.5-flash-preview';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
+  const userModel = (settings.model || '').trim();
+  const modelsToTry = userModel
+    ? [userModel, ...GEMINI_FALLBACKS.filter((m) => m !== userModel)]
+    : GEMINI_FALLBACKS;
 
   const contents: any[] = history.map((h) => ({
     role: h.role === 'user' ? 'user' : 'model',
@@ -70,7 +80,10 @@ async function geminiLoop(
     contents,
   };
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  let sawDailyQuota = false;
+
+  for (const model of modelsToTry) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
     try {
       const resp = await fetch(url, {
         method: 'POST',
@@ -81,17 +94,17 @@ async function geminiLoop(
 
       if (data.error) {
         const msg = data.error.message || '';
-        // Key 无效 → 直接报错
-        if (/api key|invalid|auth/i.test(msg)) {
+        // Key 无效 → 换模型也没用，直接报错
+        if (/api key|key invalid|permission|auth/i.test(msg)) {
           throw new Error(`⚠️ API Key 可能无效\n💡 请确认在 aistudio.google.com 创建的 Key 已完整复制`);
         }
-        // 额度超限 → 友好提示等一下，不再重试浪费额度
-        if (/quota|exceeded|limit|rate/i.test(msg)) {
-          throw new Error(`⏳ 聊得太快啦，Google 让我们稍等一下再聊～（免费版每分钟限制 20 次，正常聊天不会触发）\n等 30 秒后再发一条就好啦`);
+        // 额度超限 → 记录是否"每日额度"，换下一个模型（每个模型额度独立）
+        if (/quota|exceeded|rate|limit|resource.?exhausted|429/i.test(msg)) {
+          if (/per.?day|daily/i.test(msg)) sawDailyQuota = true;
+          continue;
         }
-        // 其他错误 → 重试一次
-        if (attempt === 0) continue;
-        throw new Error(`调用失败：${msg.replace(/https?:\/\/\S+/g, '(链接已省略)')}`);
+        // 模型不存在 / 其他错误 → 也换下一个模型试试
+        continue;
       }
 
       // 成功！正常处理回复
@@ -99,15 +112,21 @@ async function geminiLoop(
       const text = parts.filter((p) => p.text).map((p) => p.text).join('');
       return text || '（对方好像卡住了，再发一句试试？）';
     } catch (e: any) {
-      if (e?.message?.includes('API Key') || e?.message?.includes('⏳') || e?.message?.includes('聊得太快')) {
-        throw e;
-      }
-      if (attempt === 0) continue;
-      throw e;
+      if (e?.message?.includes('API Key')) throw e;
+      // 网络等异常 → 换下一个模型
+      continue;
     }
   }
 
-  return '（对方好像卡住了，稍后再试试？）';
+  // 所有模型都失败了：按看到的额度类型给出准确提示
+  if (sawDailyQuota) {
+    throw new Error(
+      `🌙 今天的免费聊天次数用完啦~\nGoogle 免费版每天有限额，明天下午 3 点左右自动恢复。\n明天我再好好陪你聊，早点休息呀 ✨`
+    );
+  }
+  throw new Error(
+    `⏳ 聊得太快啦，Google 让我们稍等一下再聊~\n等 30 秒后再发一条就好啦`
+  );
 }
 
 // ---------------------------------------------------------------------------
