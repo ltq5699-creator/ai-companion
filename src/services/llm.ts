@@ -42,7 +42,11 @@ export async function generateReply(opts: {
     return await deepseekLoop(systemPrompt, history, settings);
   } catch (e: any) {
     console.error('[LLM] 调用失败', e);
-    return `（网络或接口出了点小问题：${e?.message ?? 'unknown'}）\n稍后我再试一次好不好 T_T`;
+    const raw = e?.message ?? 'unknown';
+    // 已经是我们给的中文指引就直接返回；其余情况去掉原始链接并包一层友好提示
+    if (raw.includes('模型')) return raw;
+    const clean = raw.replace(/https?:\/\/\S+/g, '(官方链接已省略)');
+    return `（网络或接口出了点小问题：${clean}）\n稍后我再试一次好不好 T_T`;
   }
 }
 
@@ -54,7 +58,7 @@ async function geminiLoop(
   history: ChatTurn[],
   settings: AppSettings
 ): Promise<string> {
-  const model = settings.model || 'gemini-2.5-flash-preview';
+  const model = settings.model || 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
 
   const contents: any[] = history.map((h) => ({
@@ -76,7 +80,14 @@ async function geminiLoop(
       body: JSON.stringify(body),
     });
     const data = await resp.json();
-    if (data.error) throw new Error(data.error.message);
+    if (data.error) {
+      const msg = data.error.message || 'unknown error';
+      // 模型不存在 / 已下线：给中文指引，不要把 Google 的原始迁移链接丢给用户
+      if (/not found|notfound|404|deprecat|migrat|unavailable|does not exist|not support/i.test(msg)) {
+        throw new Error(`模型「${model}」当前不可用或已被 Google 改名～请去「设置」把「模型名」改成 gemini-2.5-flash 再试一次就好啦`);
+      }
+      throw new Error(msg);
+    }
 
     const parts: any[] = data.candidates?.[0]?.content?.parts ?? [];
     const text = parts.filter((p) => p.text).map((p) => p.text).join('');
