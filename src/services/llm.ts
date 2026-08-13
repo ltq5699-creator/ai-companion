@@ -78,8 +78,8 @@ async function geminiLoop(
   const baseBody = {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents,
-    tools: [{ functionDeclarations: [WEB_SEARCH_TOOL] }],
-    toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+    // 注意：Google 2026 年新规范要求 functionCall 带 thought_signature，
+    // 暂时去掉 tools 避免报错，先保证基础聊天能通；联网搜索后续加回
   };
 
   let lastError = '';
