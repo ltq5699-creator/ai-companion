@@ -94,41 +94,52 @@ async function geminiLoop(
     return clean ? `其他：${clean}` : '未知错误';
   };
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
   for (const model of modelsToTry) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.apiKey}`;
-    try {
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await resp.json().catch(() => null);
+    // 每个模型最多试 2 次：第一次遇到"每分钟超限"时等 5 秒再抢一次空位
+    // （共享梯子出口 IP 的限流是波动的，隔几秒重试常常能挤进去）
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await sleep(5000);
+      try {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await resp.json().catch(() => null);
 
-      if (!data) {
-        failures.push(`${model.replace('gemini-', '')}：返回异常（HTTP ${resp.status}）`);
-        continue;
-      }
-
-      if (data.error) {
-        const msg = data.error.message || '';
-        // Key 无效 → 换模型也没用，直接报错
-        if (/api key|key invalid|permission|auth/i.test(msg)) {
-          throw new Error(`⚠️ API Key 可能无效\n💡 请确认在 aistudio.google.com 创建的 Key 已完整复制`);
+        if (!data) {
+          failures.push(`${model.replace('gemini-', '')}：返回异常（HTTP ${resp.status}）`);
+          break;
         }
-        // 记录原因，换下一个模型（每个模型额度独立）
-        if (/per.?day|daily/i.test(msg)) sawDailyQuota = true;
-        failures.push(`${model.replace('gemini-', '')}：${shortReason(msg)}`);
-        continue;
-      }
 
-      // 成功！正常处理回复
-      const parts: any[] = data.candidates?.[0]?.content?.parts ?? [];
-      const text = parts.filter((p) => p.text).map((p) => p.text).join('');
-      return text || '（对方好像卡住了，再发一句试试？）';
-    } catch (e: any) {
-      if (e?.message?.includes('API Key')) throw e;
-      failures.push(`${model.replace('gemini-', '')}：网络异常`);
-      continue;
+        if (data.error) {
+          const msg = data.error.message || '';
+          // Key 无效 → 换模型也没用，直接报错
+          if (/api key|key invalid|permission|auth/i.test(msg)) {
+            throw new Error(`⚠️ API Key 可能无效\n💡 请确认在 aistudio.google.com 创建的 Key 已完整复制`);
+          }
+          const isMinute = /per.?minute|rate/i.test(msg) && !/per.?day|daily/i.test(msg);
+          // 每分钟超限且还没重试过 → 等 5 秒重试一次这个模型
+          if (isMinute && attempt === 0) continue;
+          // 记录原因，换下一个模型（每个模型额度独立）
+          if (/per.?day|daily/i.test(msg)) sawDailyQuota = true;
+          failures.push(`${model.replace('gemini-', '')}：${shortReason(msg)}`);
+          break;
+        }
+
+        // 成功！正常处理回复
+        const parts: any[] = data.candidates?.[0]?.content?.parts ?? [];
+        const text = parts.filter((p) => p.text).map((p) => p.text).join('');
+        return text || '（对方好像卡住了，再发一句试试？）';
+      } catch (e: any) {
+        if (e?.message?.includes('API Key')) throw e;
+        if (attempt === 0) continue; // 网络抖动 → 重试一次
+        failures.push(`${model.replace('gemini-', '')}：网络异常`);
+        break;
+      }
     }
   }
 
